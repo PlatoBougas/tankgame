@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KÖNIGSTIGER 1944 — Heavy Armor Combat Simulator</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #121110;
+            font-family: 'Courier New', Courier, monospace;
+            color: #e6dfd3;
+        }
+
+        #canvas-container {
+            position: fixed;
+            inset: 0;
+            z-index: 1;
+        }
+
+        #warzone-postfx {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 2;
+            background: radial-gradient(circle at center, rgba(0,0,0,0) 58%, rgba(10,9,8,0.68) 100%);
+        }
+
+        #damage-vignette {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 6;
+            transition: box-shadow 0.15s ease-out;
+        }
+        #damage-vignette.flash-red {
+            box-shadow: inset 0 0 120px 55px rgba(215, 25, 15, 0.82);
+        }
+        #damage-vignette.flash-amber {
+            box-shadow: inset 0 0 90px 35px rgba(235, 165, 35, 0.65);
+        }
+
+        /* ==========================================================================
+           FIRST-PERSON VIEW: AUTHENTIC GERMAN TZF 9d GUNNER OPTICS OVERLAY
+           ========================================================================== */
+        #tzf9d-optics-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 4;
+            pointer-events: none;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at center,
+                rgba(18, 24, 18, 0.04) 0%,
+                rgba(15, 20, 15, 0.18) 38%,
+                rgba(5, 5, 5, 0.98) 44%,
+                #030303 100%);
+        }
+
+        .tzf-reticle-svg {
+            width: min(86vh, 86vw);
+            height: min(86vh, 86vw);
+            opacity: 0.92;
+            filter: drop-shadow(0 0 2px rgba(0,0,0,0.8));
+        }
+
+        #optics-zoom-label {
+            position: absolute;
+            bottom: 8%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 15, 12, 0.85);
+            border: 1px solid rgba(190, 175, 140, 0.35);
+            padding: 6px 16px;
+            font-size: 12px;
+            letter-spacing: 2px;
+            color: #d4c49e;
+        }
+
+        #commander-periscope-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 4;
+            pointer-events: none;
+            display: none;
+            box-shadow: inset 0 0 160px 85px rgba(5, 5, 5, 0.92);
+        }
+
+        /* 3RD PERSON RETICLES */
+        #aim-cursor-3rd {
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 44px;
+            height: 44px;
+            border: 1.5px dashed rgba(235, 225, 200, 0.72);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 3;
+        }
+        #aim-cursor-3rd::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 4px;
+            height: 4px;
+            background: rgba(235, 225, 200, 0.85);
+            border-radius: 50%;
+        }
+
+        #bore-reticle-3rd {
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 28px;
+            height: 28px;
+            pointer-events: none;
+            z-index: 3;
+            transition: left 0.02s linear, top 0.02s linear;
+        }
+
+        /* ==========================================================================
+           TACTICAL HUD & PROMINENT TANK HEALTH BAR
+           ========================================================================== */
+        #hud-layer {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 5;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 16px 22px;
+        }
+
+        .hud-top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+        }
+
+        .center-top-stack {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            min-width: 420px;
+        }
+
+        .compass-panel {
+            width: 100%;
+            background: rgba(16, 15, 13, 0.85);
+            border: 1px solid rgba(185, 170, 140, 0.38);
+            padding: 7px 20px;
+            text-align: center;
+            backdrop-filter: blur(4px);
+        }
+        .compass-label {
+            font-size: 10px;
+            letter-spacing: 2px;
+            color: #9e9482;
+        }
+        #compass-bearing {
+            font-size: 19px;
+            font-weight: bold;
+            color: #f0e6d2;
+            letter-spacing: 3px;
+        }
+
+        /* PROMINENT TANK HEALTH BAR */
+        .tank-health-container {
+            width: 100%;
+            background: rgba(14, 13, 11, 0.9);
+            border: 1.5px solid rgba(205, 185, 145, 0.5);
+            padding: 6px 10px;
+            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6);
+        }
+        .health-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            font-weight: bold;
+            letter-spacing: 1.5px;
+            margin-bottom: 4px;
+            color: #f0e6d2;
+        }
+        .health-bar-track {
+            width: 100%;
+            height: 13px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(0, 0, 0, 0.8);
+            overflow: hidden;
+        }
+        #tank-health-fill {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, #3c9d42, #67d66d);
+            transition: width 0.18s ease-out;
+        }
+
+        /* SUBSYSTEM DAMAGE BADGES */
+        .subsystem-badges-row {
+            display: flex;
+            gap: 6px;
+            width: 100%;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .sys-badge {
+            font-size: 10px;
+            font-weight: bold;
+            padding: 3px 8px;
+            letter-spacing: 0.8px;
+            border: 1px solid;
+        }
+        .sys-badge.ok {
+            background: rgba(25, 45, 25, 0.82);
+            border-color: rgba(110, 195, 110, 0.45);
+            color: #98e698;
+        }
+        .sys-badge.crit {
+            background: rgba(135, 20, 15, 0.92);
+            border-color: #ff6b5b;
+            color: #ffe0db;
+            animation: blink 0.6s infinite;
+        }
+
+        #repair-prompt-strip {
+            display: none;
+            background: rgba(215, 135, 20, 0.92);
+            border: 1px solid #ffe082;
+            color: #111;
+            font-weight: bold;
+            font-size: 12px;
+            padding: 5px 14px;
+            letter-spacing: 1px;
+        }
+
+        .top-controls-strip {
+            display: flex;
+            gap: 10px;
+            pointer-events: auto;
+        }
+
+        .tactical-btn {
+            background: rgba(22, 20, 17, 0.88);
+            border: 1px solid rgba(205, 185, 145, 0.45);
+            color: #e8dec8;
+            padding: 8px 14px;
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .tactical-btn:hover {
+            background: rgba(185, 140, 65, 0.32);
+            border-color: #e5b869;
+        }
+        .tactical-btn.highlight {
+            border-color: #d9534f;
+            color: #ff9e99;
+        }
+
+        /* SUBSYSTEM HIT WARNING POPUP (WHEN RPG/BAZOOKA DAMAGES FUEL/ENGINE/TRACKS) */
+        #subsystem-alert-popup {
+            position: fixed;
+            top: 175px;
+            left: 50%;
+            transform: translateX(-50%) scale(0.95);
+            background: rgba(115, 15, 12, 0.94);
+            border: 2px solid #ff7766;
+            padding: 12px 26px;
+            text-align: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.25s ease;
+            z-index: 8;
+            box-shadow: 0 12px 38px rgba(0, 0, 0, 0.8);
+        }
+        #subsystem-alert-popup.active {
+            opacity: 1;
+            transform: translateX(-50%) scale(1);
+        }
+        #subsystem-alert-title {
+            font-size: 15px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            color: #ffe270;
+        }
+        #subsystem-alert-detail {
+            font-size: 12px;
+            color: #ffdad4;
+            margin-top: 4px;
+        }
+
+        /* Platoon Ambush Alert Banner */
+        #ambush-banner {
+            position: fixed;
+            top: 245px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-15px);
+            background: linear-gradient(90deg, rgba(120,20,15,0.92), rgba(45,15,12,0.95), rgba(120,20,15,0.92));
+            border: 1px solid #ff6b5b;
+            padding: 9px 24px;
+            text-align: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.35s ease;
+            z-index: 7;
+        }
+        #ambush-banner.active {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+        .ambush-title {
+            font-size: 13px;
+            font-weight: bold;
+            letter-spacing: 2.5px;
+            color: #ffdfba;
+        }
+        #ambush-sector-name {
+            font-size: 11px;
+            letter-spacing: 1.5px;
+            color: #ffb3a7;
+            margin-top: 3px;
+        }
+
+        /* Combat Radio Log */
+        #combat-log {
+            position: fixed;
+            left: 22px;
+            bottom: 185px;
+            width: 420px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            pointer-events: none;
+        }
+        .log-entry {
+            background: rgba(14, 13, 11, 0.82);
+            border-left: 3px solid #8c8270;
+            padding: 6px 10px;
+            font-size: 11.5px;
+            line-height: 1.35;
+            color: #dcd4c6;
+        }
+        .log-entry.log-danger { border-left-color: #d9534f; color: #ffb8b3; }
+        .log-entry.log-good   { border-left-color: #5cb85c; color: #c8f5c8; }
+        .log-entry.log-warn   { border-left-color: #f0ad4e; color: #ffe2b3; }
+        .log-time { color: #8c8270; margin-right: 4px; }
+
+        /* Bottom HUD Panels */
+        .hud-bottom-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            gap: 20px;
+        }
+
+        .hud-card {
+            background: rgba(16, 15, 13, 0.86);
+            border: 1px solid rgba(185, 170, 140, 0.35);
+            padding: 13px 16px;
+            backdrop-filter: blur(5px);
+        }
+
+        .tank-telemetry-panel {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            min-width: 360px;
+        }
+
+        .schematic-box {
+            width: 84px;
+            height: 94px;
+            background: rgba(0,0,0,0.45);
+            border: 1px solid rgba(255,255,255,0.12);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .telemetry-stats {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+        }
+        .stat-val {
+            font-weight: bold;
+            color: #f5ebd6;
+        }
+
+        .rpm-bar-bg, .reload-bar-bg {
+            width: 100%;
+            height: 7px;
+            background: rgba(255,255,255,0.12);
+            overflow: hidden;
+        }
+        #hud-rpm-bar {
+            width: 20%;
+            height: 100%;
+            background: #d4a656;
+            transition: width 0.08s linear;
+        }
+
+        @keyframes blink {
+            50% { opacity: 0.35; }
+        }
+
+        .controls-legend {
+            background: rgba(14, 13, 11, 0.8);
+            border: 1px solid rgba(185, 170, 140, 0.25);
+            padding: 8px 16px;
+            font-size: 11px;
+            color: #b8ae9c;
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .key-cap {
+            background: rgba(255, 255, 255, 0.14);
+            border: 1px solid rgba(255, 255, 255, 0.28);
+            padding: 1px 5px;
+            color: #fff;
+            font-weight: bold;
+        }
+
+        .weapons-panel {
+            min-width: 330px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: auto;
+        }
+
+        .ammo-selector {
+            display: flex;
+            gap: 8px;
+        }
+        .ammo-box {
+            flex: 1;
+            background: rgba(30, 28, 24, 0.85);
+            border: 1px solid rgba(185, 170, 140, 0.3);
+            padding: 7px 10px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .ammo-box.active {
+            background: rgba(180, 130, 45, 0.32);
+            border-color: #f0b849;
+        }
+        .ammo-title {
+            font-size: 12px;
+            font-weight: bold;
+            color: #f4e8d1;
+        }
+        .ammo-sub {
+            font-size: 10px;
+            color: #9e9482;
+        }
+
+        #hud-reload-bar {
+            width: 100%;
+            height: 100%;
+            background: #5cb85c;
+            transition: width 0.06s linear;
+        }
+        #hud-mg-bar {
+            width: 0%;
+            height: 100%;
+            background: #f0ad4e;
+            transition: width 0.06s linear;
+        }
+
+        /* ==========================================================================
+           MODALS (START SCREEN & TANK DESTROYED COOK-OFF SCREEN)
+           ========================================================================== */
+        #start-modal, #destroyed-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 20;
+            background: radial-gradient(circle at center, rgba(24, 22, 19, 0.88) 0%, rgba(8, 8, 7, 0.97) 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+        #destroyed-modal {
+            display: none;
+            background: radial-gradient(circle at center, rgba(90, 15, 10, 0.78) 0%, rgba(8, 8, 7, 0.96) 100%);
+        }
+
+        .briefing-card {
+            max-width: 720px;
+            width: 100%;
+            background: #181613;
+            border: 2px solid #786b54;
+            padding: 32px 36px;
+            box-shadow: 0 24px 70px rgba(0, 0, 0, 0.85);
+        }
+
+        .briefing-header {
+            border-bottom: 1px solid rgba(185, 170, 140, 0.3);
+            padding-bottom: 16px;
+            margin-bottom: 20px;
+        }
+        .briefing-tag {
+            font-size: 11px;
+            letter-spacing: 3px;
+            color: #c99e4c;
+            margin-bottom: 6px;
+        }
+        .briefing-title {
+            font-size: 28px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            color: #f2ead8;
+        }
+        .briefing-sub {
+            font-size: 13px;
+            color: #a69c8a;
+            margin-top: 4px;
+        }
+
+        .briefing-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .briefing-box {
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid rgba(185, 170, 140, 0.2);
+            padding: 14px;
+        }
+        .briefing-box h3 {
+            font-size: 12px;
+            letter-spacing: 1.5px;
+            color: #deb868;
+            margin-bottom: 8px;
+        }
+        .briefing-box p, .briefing-box li {
+            font-size: 12px;
+            line-height: 1.55;
+            color: #cfc6b6;
+            list-style: none;
+        }
+
+        .action-btn {
+            width: 100%;
+            background: #9c6f27;
+            border: 1px solid #e6b865;
+            color: #fff;
+            padding: 15px;
+            font-family: inherit;
+            font-size: 15px;
+            font-weight: bold;
+            letter-spacing: 3px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .action-btn:hover {
+            background: #b88430;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+    <div id="warzone-postfx"></div>
+    <div id="damage-vignette"></div>
+
+    <!-- 3rd Person Aiming Reticles -->
+    <div id="aim-cursor-3rd"></div>
+    <div id="bore-reticle-3rd">
+        <svg viewBox="0 0 32 32" width="28" height="28">
+            <circle cx="16" cy="16" r="10" fill="none" stroke="#66ff66" stroke-width="1.8" />
+            <line x1="16" y1="2" x2="16" y2="10" stroke="#66ff66" stroke-width="1.8" />
+            <line x1="16" y1="22" x2="16" y2="30" stroke="#66ff66" stroke-width="1.8" />
+            <line x1="2" y1="16" x2="10" y2="16" stroke="#66ff66" stroke-width="1.8" />
+            <line x1="22" y1="16" x2="30" y2="16" stroke="#66ff66" stroke-width="1.8" />
+        </svg>
+    </div>
+
+    <!-- FIRST-PERSON VIEW: Authentic German TZF 9d Gunner Sight Optics -->
+    <div id="tzf9d-optics-overlay">
+        <svg class="tzf-reticle-svg" viewBox="0 0 600 600">
+            <circle cx="300" cy="300" r="265" fill="none" stroke="#181816" stroke-width="18" />
+            <circle cx="300" cy="300" r="256" fill="none" stroke="rgba(210, 200, 175, 0.45)" stroke-width="1.5" stroke-dasharray="6 18" />
+            <line x1="60" y1="300" x2="225" y2="300" stroke="#111" stroke-width="2.4" />
+            <line x1="375" y1="300" x2="540" y2="300" stroke="#111" stroke-width="2.4" />
+            <line x1="300" y1="338" x2="300" y2="525" stroke="#111" stroke-width="2.4" />
+            <polygon points="300,300 289,324 311,324" fill="#111" />
+            <polygon points="265,300 258,315 272,315" fill="#111" />
+            <polygon points="235,300 229,312 241,312" fill="#111" />
+            <polygon points="205,300 200,310 210,310" fill="#111" />
+            <polygon points="335,300 328,315 342,315" fill="#111" />
+            <polygon points="365,300 359,312 371,312" fill="#111" />
+            <polygon points="395,300 390,310 400,310" fill="#111" />
+            <line x1="288" y1="360" x2="312" y2="360" stroke="#111" stroke-width="1.8" />
+            <line x1="284" y1="395" x2="316" y2="395" stroke="#111" stroke-width="1.8" />
+            <line x1="280" y1="430" x2="320" y2="430" stroke="#111" stroke-width="1.8" />
+            <text x="328" y="364" fill="#111" font-family="monospace" font-size="11" font-weight="bold">4</text>
+            <text x="328" y="399" fill="#111" font-family="monospace" font-size="11" font-weight="bold">8</text>
+            <text x="328" y="434" fill="#111" font-family="monospace" font-size="11" font-weight="bold">12</text>
+            <text x="252" y="105" fill="#d4c49e" font-family="monospace" font-size="13" letter-spacing="2">TZF 9d • 8.8cm KwK 43</text>
+        </svg>
+        <div id="optics-zoom-label">MAGNIFICATION: 2.5x [SHIFT OR SCROLL TO ZOOM 6.0x]</div>
+    </div>
+
+    <div id="commander-periscope-overlay"></div>
+
+    <!-- Subsystem Damage Alert Popup (Fuel Leak, Engine Damage, Track Severed, Turret Jam) -->
+    <div id="subsystem-alert-popup">
+        <div id="subsystem-alert-title">⚠ CRITICAL: FUEL TANK RUPTURED!</div>
+        <div id="subsystem-alert-detail">Burning diesel leaking (-6 HP/sec) — Hold [R] to extinguish & repair!</div>
+    </div>
+
+    <!-- Platoon Ambush Discovery Banner -->
+    <div id="ambush-banner">
+        <div class="ambush-title">⚠ US ARMY INFANTRY PLATOON AMBUSH DETECTED ⚠</div>
+        <div id="ambush-sector-name">SECTOR: ST. NIKOLAUS CATHEDRAL SQUARE</div>
+    </div>
+
+    <!-- Combat Radio & Soldier Shout Log -->
+    <div id="combat-log"></div>
+
+    <!-- Main Tactical HUD -->
+    <div id="hud-layer">
+        <div class="hud-top-bar">
+            <div style="display:flex; gap:12px; align-items:flex-start;">
+                <div class="hud-card" style="padding: 6px; border-radius: 4px;">
+                    <canvas id="radar-canvas" width="136" height="136" style="display:block; border:1px solid rgba(185,170,140,0.4);"></canvas>
+                    <div style="font-size:9px; text-align:center; color:#b8ae9c; margin-top:4px; letter-spacing:1px;">
+                        TACTICAL RADAR (<span style="color:#ffaa22;">●</span> BAZOOKA <span style="color:#ff4d42;">●</span> US GI)
+                    </div>
+                </div>
+                <div class="hud-card" style="padding: 8px 14px;">
+                    <div style="font-size: 10px; color: #9e9482; letter-spacing: 1.5px;">CAMERA OPTICS MODE</div>
+                    <div id="view-mode-badge" style="font-size: 13px; font-weight: bold; color: #deb868; margin-top: 2px;">
+                        3RD PERSON EXTERIOR VIEW
+                    </div>
+                </div>
+            </div>
+
+            <!-- Center Top Stack: Bearing + Prominent Tank Health Bar + Subsystem Status Badges -->
+            <div class="center-top-stack">
+                <div class="compass-panel">
+                    <div class="compass-label">TURRET BEARING • AACHEN SECTOR</div>
+                    <div id="compass-bearing">000° N</div>
+                    <div style="font-size: 11px; color: #c8bfa8; margin-top: 2px;">
+                        US INFANTRY IN SECTOR: <span id="hud-active-enemies" style="color:#ff8070;font-weight:bold;">10</span>
+                        &nbsp;|&nbsp; NEUTRALIZED: <span id="hud-kills" style="color:#7cd67c;font-weight:bold;">0</span>
+                    </div>
+                </div>
+
+                <!-- PROMINENT TANK HEALTH BAR -->
+                <div class="tank-health-container">
+                    <div class="health-header">
+                        <span>KÖNIGSTIGER #332 ARMOR & HULL HEALTH</span>
+                        <span id="tank-health-text">1000 / 1000 HP (100%)</span>
+                    </div>
+                    <div class="health-bar-track">
+                        <div id="tank-health-fill"></div>
+                    </div>
+                </div>
+
+                <!-- SUBSYSTEM DAMAGE INDICATORS -->
+                <div class="subsystem-badges-row">
+                    <span id="badge-engine" class="sys-badge ok">ENGINE: OK</span>
+                    <span id="badge-fuel" class="sys-badge ok">FUEL TANK: SEALED</span>
+                    <span id="badge-turret" class="sys-badge ok">TURRET RING: OK</span>
+                    <span id="badge-tracks" class="sys-badge ok">TRACKS: OPERATIONAL</span>
+                </div>
+
+                <div id="repair-prompt-strip">
+                    🔧 HOLD [R] TO REPAIR SUBSYSTEMS & EXTINGUISH FUEL FIRE (0%)
+                </div>
+            </div>
+
+            <div class="top-controls-strip">
+                <button id="btn-toggle-view" class="tactical-btn">
+                    SWITCH FPV / 3RD PERSON [V]
+                </button>
+                <button id="btn-spawn-platoon" class="tactical-btn highlight">
+                    SPAWN US PLATOON AHEAD [P]
+                </button>
+            </div>
+        </div>
+
+        <div class="hud-bottom-bar">
+            <div class="hud-card tank-telemetry-panel">
+                <div class="schematic-box">
+                    <svg viewBox="0 0 100 110" width="74" height="84">
+                        <rect x="14" y="12" width="14" height="84" fill="#3a3630" stroke="#7cd67c" stroke-width="1.5" />
+                        <rect x="72" y="12" width="14" height="84" fill="#3a3630" stroke="#7cd67c" stroke-width="1.5" />
+                        <polygon points="28,14 72,14 72,94 28,94" fill="#2b3026" stroke="#85c77e" stroke-width="1.8" />
+                        <line x1="28" y1="22" x2="72" y2="22" stroke="#b6e3b0" stroke-width="2.5" />
+                        <g id="svg-tank-turret" transform="rotate(0 50 55)">
+                            <rect x="47" y="2" width="6" height="42" fill="#d4c49e" />
+                            <polygon points="36,38 64,38 60,72 40,72" fill="#4a5440" stroke="#e6dec8" stroke-width="1.8" />
+                        </g>
+                    </svg>
+                </div>
+
+                <div class="telemetry-stats">
+                    <div style="font-size: 12px; font-weight: bold; color: #deb868; letter-spacing: 1px;">
+                        PANZER VI AUSF. B "KÖNIGSTIGER"
+                    </div>
+                    <div class="stat-row">
+                        <span>SPEED / GEAR:</span>
+                        <span class="stat-val"><span id="hud-speed">0</span> KM/H (<span id="hud-gear">N</span>)</span>
+                    </div>
+                    <div class="rpm-bar-bg">
+                        <div id="hud-rpm-bar"></div>
+                    </div>
+                    <div class="stat-row">
+                        <span>HULL INTEGRITY:</span>
+                        <span class="stat-val" id="hud-hull-hp">100%</span>
+                    </div>
+                    <div class="stat-row">
+                        <span>ARMOR RICOCHETS:</span>
+                        <span class="stat-val" id="hud-ricochets">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="controls-legend">
+                <span><span class="key-cap">W</span><span class="key-cap">A</span><span class="key-cap">S</span><span class="key-cap">D</span> Drive</span>
+                <span><span class="key-cap">LMB</span> / <span class="key-cap">SPACE</span> 88mm Cannon (Breaks Buildings!)</span>
+                <span><span class="key-cap">RMB</span> / <span class="key-cap">F</span> MG34</span>
+                <span><span class="key-cap">V</span> FPV / 3rd Person</span>
+                <span><span class="key-cap">SHIFT</span> Zoom 6x</span>
+                <span><span class="key-cap">R</span> Hold to Repair</span>
+            </div>
+
+            <div class="hud-card weapons-panel">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span id="hud-reload-text" style="font-size: 12px; font-weight: bold; color: #90e890;">
+                        8.8cm KwK 43 READY [HE]
+                    </span>
+                    <span style="font-size: 10px; color: #9e9482;">L/71 MAIN GUN</span>
+                </div>
+                <div class="reload-bar-bg">
+                    <div id="hud-reload-bar"></div>
+                </div>
+
+                <div class="ammo-selector">
+                    <div id="ammo-he" class="ammo-box active">
+                        <div class="ammo-title">[1] Sprgr. 43 (HE)</div>
+                        <div class="ammo-sub">Destroys Building Windows & Walls</div>
+                    </div>
+                    <div id="ammo-ap" class="ammo-box">
+                        <div class="ammo-title">[2] PzGr. 39 (APCBC)</div>
+                        <div class="ammo-sub">High-Velocity Armor-Piercing</div>
+                    </div>
+                </div>
+
+                <div style="display:flex; justify-content:space-between; font-size: 11px; margin-top: 2px;">
+                    <span>7.92mm MG34 COAXIAL / HULL</span>
+                    <span style="color:#d4c49e;">850 RPM</span>
+                </div>
+                <div class="reload-bar-bg">
+                    <div id="hud-mg-bar"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MISSION BRIEFING START SCREEN -->
+    <div id="start-modal">
+        <div class="briefing-card">
+            <div class="briefing-header">
+                <div class="briefing-tag">SCHWERE PANZER-ABTEILUNG 503 • WESTERN FRONT, AUTUMN 1944</div>
+                <div class="briefing-title">KÖNIGSTIGER: URBAN COMBAT SIMULATOR</div>
+                <div class="briefing-sub">High-Fidelity Sculpted Armor, Destructible 3D Buildings & Upper-Story Window Ambushes</div>
+            </div>
+
+            <div class="briefing-grid">
+                <div class="briefing-box">
+                    <h3>TACTICAL REALISM & DAMAGE</h3>
+                    <p>
+                        • <strong>US Soldiers in 2nd & 3rd Floor Windows</strong>: American riflemen, MG gunners, and M1A1 Bazooka teams garrison upper-story windows and street barricades while shouting commands.<br>
+                        • <strong>Destructible Buildings</strong>: Fire your 88mm HE cannon at building windows to blow out the masonry walls!<br>
+                        • <strong>Subsystem Damage & Health Bar</strong>: Bazooka hits cause fuel leaks, engine damage, hydraulic jams, or track breaks (`Hold [R] to repair`). If your 1000 HP bar hits 0, the ammo rack blows the turret off!
+                    </p>
+                </div>
+                <div class="briefing-box">
+                    <h3>CREW & OPTICS CONTROLS</h3>
+                    <ul>
+                        <li>• <strong>[W / A / S / D]</strong> Drive & Neutral Pivot Steer</li>
+                        <li>• <strong>[Mouse]</strong> Aim Turret & Elevate 88mm Gun</li>
+                        <li>• <strong>[Left Click / Space]</strong> Fire 8.8cm KwK 43 Cannon</li>
+                        <li>• <strong>[Right Click / F]</strong> Fire 7.92mm Coaxial & Hull MG34</li>
+                        <li>• <strong>[V or C]</strong> Switch FPV (TZF 9d Sight) & 3rd Person</li>
+                        <li>• <strong>[Shift / Scroll]</strong> Toggle 2.5x / 6.0x Sight Magnification</li>
+                        <li>• <strong>[Hold R]</strong> Extinguish Fuel Leak & Repair Subsystems</li>
+                        <li>• <strong>[P]</strong> Trigger Immediate US Platoon Ambush</li>
+                    </ul>
+                </div>
+            </div>
+
+            <button id="btn-deploy" class="action-btn">ENTER KING TIGER #332 & DEPLOY TO SECTOR</button>
+        </div>
+    </div>
+
+    <!-- TANK DESTROYED MODAL (WHEN HEALTH BAR HITS 0 HP) -->
+    <div id="destroyed-modal">
+        <div class="briefing-card" style="border-color: #ff5544; text-align: center;">
+            <div class="briefing-tag" style="color: #ff7766;">CATASTROPHIC 88MM AMMUNITION COOK-OFF</div>
+            <div class="briefing-title" style="color: #ff4433; margin-bottom: 12px;">
+                KING TIGER #332 DESTROYED IN ACTION
+            </div>
+            <p style="font-size: 13px; color: #dcd4c6; line-height: 1.6; margin-bottom: 24px;">
+                Multiple US M1A1 Bazooka HEAT warheads and sustained fuel fires penetrated the hull armor, triggering a catastrophic internal ammunition explosion that blew off the Henschel turret.
+            </p>
+            <button id="btn-redeploy" class="action-btn" style="background: #a8281d; border-color: #ff8877;">
+                REDEPLOY NEW KING TIGER #332 [PRESS ENTER]
+            </button>
+        </div>
+    </div>
+
+    <!-- 3D World-Space Soldier Shout & Direction Marker -->
+    <div id="world-shout-marker" style="
+        display: none;
+        position: fixed;
+        transform: translate(-50%, -100%);
+        background: rgba(20, 18, 14, 0.92);
+        border: 1.5px solid #f0b849;
+        color: #ffe8b3;
+        padding: 5px 11px;
+        font-size: 11px;
+        letter-spacing: 0.5px;
+        white-space: nowrap;
+        pointer-events: none;
+        z-index: 9;
+        box-shadow: 0 6px 20px rgba(0,0,0,0.8);
+    "></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="textures.js"></script>
+    <script src="voices.js"></script>
+    <script src="audio.js"></script>
+    <script src="world.js"></script>
+    <script src="tank.js"></script>
+    <script src="infantry.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>
